@@ -11,4 +11,8 @@
     <ApplicationIcon>icons/cert-mama-icon.ico</ApplicationIcon>
   </PropertyGroup>
 
+
+  <ItemGroup>
+    <Resource Include="icons/cert-mama-icon.ico" />
+  </ItemGroup>
 </Project>
