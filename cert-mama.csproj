@@ -6,8 +6,9 @@
     <RootNamespace>cert_mama</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-	  <UseWpf>true</UseWpf>
-  <UseWindowsForms>true</UseWindowsForms>
+    <UseWpf>true</UseWpf>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>icons/cert-mama-icon.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>
