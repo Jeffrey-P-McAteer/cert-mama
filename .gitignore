@@ -3,4 +3,6 @@ obj/*
 *.back
 bin
 bin/*
+.vs
+.vs/*
 
