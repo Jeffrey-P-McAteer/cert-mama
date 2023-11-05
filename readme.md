@@ -3,6 +3,8 @@
 
 cross-platform `c#` system-tray application designed to alert on expiring certificates from URLs in a text file.
 
+![icons/cert-mama-icon.png](icons/cert-mama-icon.png)
+
 # Install at Login
 
 1. Open the windows `run` dialog
