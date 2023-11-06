@@ -14,6 +14,7 @@ using System.Net.Http;
 using System.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using WinRT;
 
 namespace CertMama // Note: actual namespace depends on the project name.
 {
@@ -77,6 +78,7 @@ namespace CertMama // Note: actual namespace depends on the project name.
             var icon_menu = new ContextMenuStrip();
 
             icon_menu.Items.Add("Select Monthly URL Text File");
+            icon_menu.Items.Add("Check Certs Now");
             icon_menu.Items.Add("Exit");
 
             icon_menu.ItemClicked += MenuItemClicked;
@@ -109,6 +111,11 @@ namespace CertMama // Note: actual namespace depends on the project name.
                     Settings.Default.Save();
                 }
             }
+            else if (clicked_txt.Contains("check") && clicked_txt.Contains("now"))
+            {
+                last_url_poll_time.Clear(); // Forget what we polled for previously
+                PollServersOnce();
+            }
 
         }
 
@@ -116,80 +123,124 @@ namespace CertMama // Note: actual namespace depends on the project name.
         {
             while (!this.want_exit)
             {
-                try
+                PollServersOnce();
+                Thread.Sleep(15 * 60 * 1000); // Inspect new URLs from text file every 15 minutes, if they exist. Most of this will be a no-op.
+            }
+        }
+
+        private Dictionary<string, DateTime> last_url_poll_time = new Dictionary<string, DateTime>();
+
+        public void PollServersOnce()
+        {
+            try
+            {
+                var server_txt_f = Settings.Default.URLsToCheckTextFileMonth;
+                if (server_txt_f.Length > 2 && File.Exists(server_txt_f))
                 {
-                    var server_txt_f = Settings.Default.URLsToCheckTextFileMonth;
-                    if (server_txt_f.Length > 2 && File.Exists(server_txt_f))
+                    const Int32 BufferSize = 1024;
+                    using (var fileStream = File.OpenRead(server_txt_f))
                     {
-                        const Int32 BufferSize = 1024;
-                        using (var fileStream = File.OpenRead(server_txt_f))
+                        using (var streamReader = new StreamReader(fileStream, Encoding.UTF8, true, BufferSize))
                         {
-                            using (var streamReader = new StreamReader(fileStream, Encoding.UTF8, true, BufferSize))
+                            String line;
+                            while ((line = streamReader.ReadLine()) != null)
                             {
-                                String line;
-                                while ((line = streamReader.ReadLine()) != null)
+                                if (!string.IsNullOrWhiteSpace(line) && !line.Trim().StartsWith("#"))
                                 {
-                                    if (!string.IsNullOrWhiteSpace(line) && !line.Trim().StartsWith("#"))
+                                    try
                                     {
-                                        try
-                                        {
-                                            this.InspectOneUrl(line.Trim());
-                                        }
-                                        catch (Exception e)
-                                        {
-                                            Debug.WriteLine(e);
-                                        }
+                                        this.InspectOneUrl(line.Trim());
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        Debug.WriteLine(e);
                                     }
                                 }
                             }
                         }
                     }
                 }
-                catch (Exception e)
-                {
-                    Debug.WriteLine(e);
-                }
-                Thread.Sleep(9000);
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e);
             }
         }
 
         public void InspectOneUrl(string url)
         {
-            var handler = new HttpClientHandler
+            var now = DateTime.Now;
+            // Have we inspected this within the last 22 hours?
+            if (last_url_poll_time.ContainsKey(url))
             {
-                UseDefaultCredentials = true,
-
-                ServerCertificateCustomValidationCallback = (sender, cert, chain, error) =>
+                var url_last_poll_time = last_url_poll_time[url];
+                var hours_since_last_poll = Math.Abs((now - url_last_poll_time).TotalHours);
+                if (hours_since_last_poll <= 22)
                 {
-
-                    // Access cert object.
-                    X509Certificate2UI.DisplayCertificate(cert);
-
-                    return true;
-                }
-            };
-
-            using (HttpClient client = new HttpClient(handler))
-            {
-                using (HttpResponseMessage response = client.GetAsync(url).Result)
-                {
-                    using (HttpContent content = response.Content)
-                    {
-
-                    }
+                    return; // Don't re-poll
                 }
             }
 
+            DateTime? cert_expire_date = null;
 
+            try
+            {
+                var handler = new HttpClientHandler
+                {
+                    UseDefaultCredentials = true,
 
-            //Debug.WriteLine("Inspecting " + url);
-            new ToastContentBuilder()
-                .SetToastScenario(ToastScenario.IncomingCall)
-                .AddArgument("action", "viewConversation")
-                //.AddArgument("conversationId", 9813)
-                .AddText("Inspecting " + url)
-                //.AddText("Check this out, The Enchantments in Washington!")
-                .Show();
+                    ServerCertificateCustomValidationCallback = (sender, cert, chain, error) =>
+                    {
+
+                        if (cert != null)
+                        {
+                            // Access cert object.
+                            //X509Certificate2UI.DisplayCertificate(cert);
+                            cert_expire_date = cert.NotAfter;
+                        }
+
+                        return true;
+                    }
+                };
+
+                using (HttpClient client = new HttpClient(handler))
+                {
+                    using (HttpResponseMessage response = client.GetAsync(url).Result)
+                    {
+                        using (HttpContent content = response.Content)
+                        {
+
+                        }
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e);
+            }
+
+            last_url_poll_time[url] = now;
+
+            if (cert_expire_date == null)
+            {
+                new ToastContentBuilder()
+                    .SetToastScenario(ToastScenario.IncomingCall)
+                    .AddText("Unable to get HTTPS certificate expiration Date!")
+                    .AddText("" + url)
+                    .Show();
+                return;
+            }
+
+            var one_month_in_future = DateTime.Today.AddMonths(1);
+            if (cert_expire_date < one_month_in_future)
+            {
+                // Cert will expire within 1 month of DateTime.Today!
+                new ToastContentBuilder()
+                    .SetToastScenario(ToastScenario.IncomingCall)
+                    .AddText("Certificate Expires in "+Math.Abs(Math.Round((one_month_in_future - (DateTime) cert_expire_date).TotalDays, 0))+" Days!")
+                    .AddText("" + url)
+                    .Show();
+            }
             
         }
     }
