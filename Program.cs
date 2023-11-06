@@ -232,7 +232,15 @@ namespace CertMama // Note: actual namespace depends on the project name.
             }
 
             var one_month_in_future = DateTime.Today.AddMonths(1);
-            if (cert_expire_date < one_month_in_future)
+            if (cert_expire_date < DateTime.Today)
+            {
+                new ToastContentBuilder()
+                    .SetToastScenario(ToastScenario.IncomingCall)
+                    .AddText("Certificate Has Expired " + Math.Abs(Math.Round((DateTime.Today - (DateTime)cert_expire_date).TotalDays, 0)) + " Days Ago!")
+                    .AddText("" + url)
+                    .Show();
+            }
+            else if (cert_expire_date < one_month_in_future)
             {
                 // Cert will expire within 1 month of DateTime.Today!
                 new ToastContentBuilder()
