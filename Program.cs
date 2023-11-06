@@ -124,7 +124,15 @@ namespace CertMama // Note: actual namespace depends on the project name.
             while (!this.want_exit)
             {
                 PollServersOnce();
-                Thread.Sleep(15 * 60 * 1000); // Inspect new URLs from text file every 15 minutes, if they exist. Most of this will be a no-op.
+                // Inspect new URLs from text file every 15 minutes, if they exist. Most of this will be a no-op.
+                for (int i = 0; i < 15 * 60; i += 1)
+                {
+                    Thread.Sleep(1000);
+                    if (this.want_exit)
+                    {
+                        break;
+                    }
+                }
             }
         }
 
