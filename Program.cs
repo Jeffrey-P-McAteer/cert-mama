@@ -8,7 +8,12 @@ using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Text;
 using Microsoft.Toolkit.Uwp.Notifications;
-// using System.Windows.Controls;
+
+using System.Net;
+using System.Net.Http;
+using System.Security;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 
 namespace CertMama // Note: actual namespace depends on the project name.
 {
@@ -150,6 +155,33 @@ namespace CertMama // Note: actual namespace depends on the project name.
 
         public void InspectOneUrl(string url)
         {
+            var handler = new HttpClientHandler
+            {
+                UseDefaultCredentials = true,
+
+                ServerCertificateCustomValidationCallback = (sender, cert, chain, error) =>
+                {
+
+                    // Access cert object.
+                    X509Certificate2UI.DisplayCertificate(cert);
+
+                    return true;
+                }
+            };
+
+            using (HttpClient client = new HttpClient(handler))
+            {
+                using (HttpResponseMessage response = client.GetAsync(url).Result)
+                {
+                    using (HttpContent content = response.Content)
+                    {
+
+                    }
+                }
+            }
+
+
+
             //Debug.WriteLine("Inspecting " + url);
             new ToastContentBuilder()
                 .SetToastScenario(ToastScenario.IncomingCall)
