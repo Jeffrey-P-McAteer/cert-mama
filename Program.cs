@@ -1,8 +1,10 @@
 ﻿using cert_mama.Properties;
 
 using System;
+using System.Drawing;
 using System.Windows.Forms;
 using System.Runtime.InteropServices;
+// using System.Windows.Controls;
 
 namespace CertMama // Note: actual namespace depends on the project name.
 {
@@ -17,9 +19,14 @@ namespace CertMama // Note: actual namespace depends on the project name.
                 var handle = ConsoleUtils.GetConsoleWindow();
                 ConsoleUtils.ShowWindow(handle, ConsoleUtils.SW_HIDE);
             }
+            else
+            {
+                Console.WriteLine("Got Args: " + string.Join(", ", args));
+                Console.WriteLine("URLsToCheckTextFileMonth = " + Settings.Default.URLsToCheckTextFileMonth);
 
-            Console.WriteLine("Got Args: " + string.Join(", ", args));
+            }
 
+            Application.SetCompatibleTextRenderingDefault(false);
             Application.EnableVisualStyles();
             cma = new CertMamaApp();
             Application.Run(cma);
@@ -56,9 +63,39 @@ namespace CertMama // Note: actual namespace depends on the project name.
             tray_icon.Icon = Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetEntryAssembly()?.Location);
             tray_icon.Visible = true;
             tray_icon.Text = "Cert Mama";
-            tray_icon.ContextMenuStrip = new ContextMenuStrip();
+            var icon_menu = new ContextMenuStrip();
 
-            
+            icon_menu.Items.Add("Select Monthly URL Text File");
+            icon_menu.Items.Add("Exit");
+
+            icon_menu.ItemClicked += MenuItemClicked;
+
+            tray_icon.ContextMenuStrip = icon_menu;
+
+        }
+
+        public void MenuItemClicked(object? sender, ToolStripItemClickedEventArgs e)
+        {
+            string clicked_txt = (""+e.ClickedItem).ToLower().Trim();
+            if (clicked_txt.Equals("exit"))
+            {
+                Application.Exit();
+            }
+            else if (clicked_txt.Contains("select") && clicked_txt.Contains("text file"))
+            {
+                var file_picker = new OpenFileDialog()
+                {
+                    Title = "Select a text file with URLs to check",
+                    DefaultExt = ".txt",
+                };
+                var r = file_picker.ShowDialog();
+                if (r == DialogResult.OK)
+                {
+                    Settings.Default.URLsToCheckTextFileMonth = file_picker.FileName;
+                    Settings.Default.Save();
+                }
+            }
+
         }
     }
 }
