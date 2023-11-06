@@ -1,9 +1,13 @@
 ﻿using cert_mama.Properties;
 
 using System;
+using System.IO;
 using System.Drawing;
 using System.Windows.Forms;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
+using System.Text;
+using Microsoft.Toolkit.Uwp.Notifications;
 // using System.Windows.Controls;
 
 namespace CertMama // Note: actual namespace depends on the project name.
@@ -57,6 +61,8 @@ namespace CertMama // Note: actual namespace depends on the project name.
     public class CertMamaApp: ApplicationContext
     {
         public NotifyIcon? tray_icon = null;
+        public Thread? poll_servers_t = null;
+        public bool want_exit = false;
         public CertMamaApp(): base()
         {
             tray_icon = new NotifyIcon();
@@ -72,6 +78,8 @@ namespace CertMama // Note: actual namespace depends on the project name.
 
             tray_icon.ContextMenuStrip = icon_menu;
 
+            poll_servers_t = new Thread(PollServersThread);
+            poll_servers_t.Start();
         }
 
         public void MenuItemClicked(object? sender, ToolStripItemClickedEventArgs e)
@@ -79,6 +87,7 @@ namespace CertMama // Note: actual namespace depends on the project name.
             string clicked_txt = (""+e.ClickedItem).ToLower().Trim();
             if (clicked_txt.Equals("exit"))
             {
+                want_exit = true;
                 Application.Exit();
             }
             else if (clicked_txt.Contains("select") && clicked_txt.Contains("text file"))
@@ -96,6 +105,60 @@ namespace CertMama // Note: actual namespace depends on the project name.
                 }
             }
 
+        }
+
+        public void PollServersThread()
+        {
+            while (!this.want_exit)
+            {
+                try
+                {
+                    var server_txt_f = Settings.Default.URLsToCheckTextFileMonth;
+                    if (server_txt_f.Length > 2 && File.Exists(server_txt_f))
+                    {
+                        const Int32 BufferSize = 1024;
+                        using (var fileStream = File.OpenRead(server_txt_f))
+                        {
+                            using (var streamReader = new StreamReader(fileStream, Encoding.UTF8, true, BufferSize))
+                            {
+                                String line;
+                                while ((line = streamReader.ReadLine()) != null)
+                                {
+                                    if (!string.IsNullOrWhiteSpace(line) && !line.Trim().StartsWith("#"))
+                                    {
+                                        try
+                                        {
+                                            this.InspectOneUrl(line.Trim());
+                                        }
+                                        catch (Exception e)
+                                        {
+                                            Debug.WriteLine(e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.WriteLine(e);
+                }
+                Thread.Sleep(9000);
+            }
+        }
+
+        public void InspectOneUrl(string url)
+        {
+            //Debug.WriteLine("Inspecting " + url);
+            new ToastContentBuilder()
+                .SetToastScenario(ToastScenario.IncomingCall)
+                .AddArgument("action", "viewConversation")
+                //.AddArgument("conversationId", 9813)
+                .AddText("Inspecting " + url)
+                //.AddText("Check this out, The Enchantments in Washington!")
+                .Show();
+            
         }
     }
 }
