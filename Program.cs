@@ -103,7 +103,7 @@ namespace CertMama // Note: actual namespace depends on the project name.
             }
             else if (clicked_txt.Contains("select") && clicked_txt.Contains("text file"))
             {
-                var file_picker = new OpenFileDialog()
+                var file_picker = new System.Windows.Forms.OpenFileDialog()
                 {
                     Title = "Select a text file with URLs to check",
                     DefaultExt = ".txt",
