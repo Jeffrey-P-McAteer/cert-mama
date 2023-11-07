@@ -15,6 +15,7 @@ using System.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using WinRT;
+using Microsoft.Win32;
 
 namespace CertMama // Note: actual namespace depends on the project name.
 {
@@ -87,6 +88,9 @@ namespace CertMama // Note: actual namespace depends on the project name.
 
             poll_servers_t = new Thread(PollServersThread);
             poll_servers_t.Start();
+
+            //setup to run each login of session
+            Microsoft.Win32.SystemEvents.SessionSwitch += new Microsoft.Win32.SessionSwitchEventHandler(SystemEvents_SessionSwitch);
         }
 
         public void MenuItemClicked(object? sender, ToolStripItemClickedEventArgs e)
@@ -258,6 +262,16 @@ namespace CertMama // Note: actual namespace depends on the project name.
                     .Show();
             }
             
+        }
+
+        private void SystemEvents_SessionSwitch(object sender, Microsoft.Win32.SessionSwitchEventArgs e)
+        {
+            if (e.Reason == SessionSwitchReason.SessionUnlock)
+            {
+                // Poll a single time every time someone logs in
+                last_url_poll_time.Clear(); // Forget what we polled for previously
+                PollServersOnce();
+            }
         }
     }
 }
