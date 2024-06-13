@@ -1,0 +1,13 @@
+
+default:
+  tags:
+    - windows-11
+
+stages:
+ - sonar-scan
+
+sonar-scan-cert-mama:
+  stage: sonar-scan
+  script:
+    - python run_sonar_scans.py
+

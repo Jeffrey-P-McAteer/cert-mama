@@ -5,4 +5,5 @@ bin
 bin/*
 .vs
 .vs/*
+.sonarqube
 
