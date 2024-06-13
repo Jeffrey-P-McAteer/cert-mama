@@ -5,7 +5,7 @@
     <Setting Name="URLsToCheckTextFileMonth" Type="System.String" Scope="User">
       <Value Profile="(Default)" />
     </Setting>
-    <Setting Name="URLsToCheckTextFileWeek" Type="System.String" Scope="User">
+    <Setting Name="ConfigJSONFile" Type="System.String" Scope="User">
       <Value Profile="(Default)" />
     </Setting>
   </Settings>

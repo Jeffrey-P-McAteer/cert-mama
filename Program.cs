@@ -17,6 +17,9 @@ using System.Security.Cryptography.X509Certificates;
 using WinRT;
 using Microsoft.Win32;
 using System.Security.Policy;
+using System.Text.Json;
+using Exception = System.Exception;
+using System.DirectoryServices.AccountManagement;
 
 namespace CertMama // Note: actual namespace depends on the project name.
 {
@@ -80,6 +83,7 @@ namespace CertMama // Note: actual namespace depends on the project name.
             var icon_menu = new ContextMenuStrip();
 
             icon_menu.Items.Add("Select Monthly URL Text File");
+            icon_menu.Items.Add("Select Configuration Text File");
             icon_menu.Items.Add("Check Certs Now");
             icon_menu.Items.Add("Exit");
 
@@ -102,7 +106,7 @@ namespace CertMama // Note: actual namespace depends on the project name.
                 want_exit = true;
                 Application.Exit();
             }
-            else if (clicked_txt.Contains("select") && clicked_txt.Contains("text file"))
+            else if (clicked_txt.Contains("select") && clicked_txt.Contains("url") && clicked_txt.Contains("text file"))
             {
                 var file_picker = new System.Windows.Forms.OpenFileDialog()
                 {
@@ -116,6 +120,20 @@ namespace CertMama // Note: actual namespace depends on the project name.
                     Settings.Default.Save();
                 }
             }
+            else if (clicked_txt.Contains("select") && clicked_txt.Contains("configuration") && clicked_txt.Contains("text file"))
+            {
+                var file_picker = new System.Windows.Forms.OpenFileDialog()
+                {
+                    Title = "Select a JSON text file",
+                    DefaultExt = ".json",
+                };
+                var r = file_picker.ShowDialog();
+                if (r == DialogResult.OK)
+                {
+                    Settings.Default.ConfigJSONFile = file_picker.FileName;
+                    Settings.Default.Save();
+                }
+            }
             else if (clicked_txt.Contains("check") && clicked_txt.Contains("now"))
             {
                 last_url_poll_time.Clear(); // Forget what we polled for previously
@@ -123,6 +141,59 @@ namespace CertMama // Note: actual namespace depends on the project name.
             }
 
         }
+
+        public Dictionary<string, string> ReadJsonSettings()
+        {
+            var default_settings = new Dictionary<string, string>()
+            {
+                {"IgnoredHttpsHostNames", "google.com,my.broken.site.org"},
+                {"DashONotLoggedinMaxDaysAllowed", "21"},
+            };
+            try
+            {
+                if (!string.IsNullOrEmpty(Settings.Default.ConfigJSONFile))
+                {
+                    if (File.Exists(Settings.Default.ConfigJSONFile))
+                    {
+                        string json_str = File.ReadAllText(Settings.Default.ConfigJSONFile);
+                        if (JsonSerializer.Deserialize(json_str, typeof(Dictionary<string, string>), new JsonSerializerOptions() { AllowTrailingCommas = true }) is Dictionary<string, string> settings)
+                        {
+                            return settings;
+                        }
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e);
+                // This could be caused by a user not writing valid JSON, so tell them about it.
+                new ToastContentBuilder()
+                        .SetToastScenario(ToastScenario.IncomingCall)
+                        .AddText("Error reading configuration file!")
+                        .AddText("" + e)
+                        .Show();
+            }
+            // If we're here either no config file has been set OR the config file has invalid JSON, so we write defaults to the file.
+            try
+            {
+                if (!string.IsNullOrEmpty(Settings.Default.ConfigJSONFile))
+                {
+                    File.WriteAllText(Settings.Default.ConfigJSONFile, JsonSerializer.Serialize(default_settings, new JsonSerializerOptions() { WriteIndented=true}));
+                    new ToastContentBuilder()
+                        .SetToastScenario(ToastScenario.IncomingCall)
+                        .AddText("Wrote default configuration to file")
+                        .AddText(""+ Settings.Default.ConfigJSONFile)
+                        .Show();
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e);
+            }
+            // Return defaults
+            return default_settings;
+        }
+
 
         public void PollServersThread()
         {
@@ -147,12 +218,20 @@ namespace CertMama // Note: actual namespace depends on the project name.
         {
             PollServersOnce();
             DetectUserCertsExpiring();
+            DetectUserDashOorAAccountNotLoggedInRecently();
         }
 
         public void PollServersOnce()
         {
             try
             {
+                var config = this.ReadJsonSettings();
+                string[] ignored_hostnames = new string[] { };
+                if (config.TryGetValue("IgnoredHttpsHostNames", out string names))
+                {
+                    ignored_hostnames = names.Split(new char[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                }
+
                 var server_txt_f = Settings.Default.URLsToCheckTextFileMonth;
                 if (server_txt_f.Length > 2 && File.Exists(server_txt_f))
                 {
@@ -168,6 +247,18 @@ namespace CertMama // Note: actual namespace depends on the project name.
                                 {
                                     try
                                     {
+                                        bool url_should_be_ignored = false;
+                                        foreach (var ignored_host in ignored_hostnames)
+                                        {
+                                            if (line.Contains(ignored_host))
+                                            {
+                                                url_should_be_ignored = true;
+                                            }
+                                        }
+                                        if (url_should_be_ignored)
+                                        {
+                                            continue;
+                                        }
                                         this.InspectOneUrl(line.Trim());
                                     }
                                     catch (Exception e)
@@ -320,6 +411,73 @@ namespace CertMama // Note: actual namespace depends on the project name.
                 Debug.WriteLine(e);
             }
         }
+
+        public void DetectUserDashOorAAccountNotLoggedInRecently()
+        {
+            try
+            {
+                var config = this.ReadJsonSettings();
+                int max_days_allowed_not_logged_in = 21;
+                if (config.TryGetValue("DashONotLoggedinMaxDaysAllowed", out string max_days_val))
+                {
+                    if (int.TryParse(max_days_val, out int val_int))
+                    {
+                        max_days_allowed_not_logged_in = Math.Max(0, Math.Min(30, val_int));
+                    }
+                }
+
+                string possible_o_username = Environment.UserName + "-o";
+                bool found_o_account = false;
+                DateTime dasho_last_login = DateTime.MinValue;
+
+                using (var context = new PrincipalContext(ContextType.Domain))
+                {
+                    using (var searcher = new PrincipalSearcher(new UserPrincipal(context)))
+                    {
+                        foreach (var result in searcher.FindAll())
+                        {
+                            var auth = result as AuthenticablePrincipal;
+                            if (auth != null)
+                            {
+                                if (auth.SamAccountName.StartsWith(Environment.UserName))
+                                {
+                                    //Console.WriteLine("Name: " + auth.Name);
+                                    //Console.WriteLine("Last Logon Time: " + auth.LastLogon);
+                                    if (auth.SamAccountName.Equals(possible_o_username, StringComparison.InvariantCultureIgnoreCase))
+                                    {
+                                        // Found the -o account, get last login time
+                                        found_o_account = true;
+                                        if (auth.LastLogon is DateTime last_login_val) {
+                                            dasho_last_login = last_login_val;
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (found_o_account)
+                {
+                    int days_since_last_login = (int) ((DateTime.Now - dasho_last_login).TotalDays + 0.5);
+                    if (days_since_last_login > max_days_allowed_not_logged_in)
+                    {
+                        new ToastContentBuilder()
+                            .SetToastScenario(ToastScenario.IncomingCall)
+                            .AddText(possible_o_username+" has not logged in for "+ days_since_last_login+" Days!")
+                            .AddText("Please login using "+ possible_o_username+" to prevent your account being locked.")
+                            .Show();
+                    }
+                }
+
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e);
+            }
+        }
+
 
 
     }
