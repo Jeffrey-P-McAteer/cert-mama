@@ -16,6 +16,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using WinRT;
 using Microsoft.Win32;
+using System.Security.Policy;
 
 namespace CertMama // Note: actual namespace depends on the project name.
 {
@@ -118,7 +119,7 @@ namespace CertMama // Note: actual namespace depends on the project name.
             else if (clicked_txt.Contains("check") && clicked_txt.Contains("now"))
             {
                 last_url_poll_time.Clear(); // Forget what we polled for previously
-                PollServersOnce();
+                RunExpiryChecks();
             }
 
         }
@@ -127,7 +128,7 @@ namespace CertMama // Note: actual namespace depends on the project name.
         {
             while (!this.want_exit)
             {
-                PollServersOnce();
+                RunExpiryChecks();
                 // Inspect new URLs from text file every 15 minutes, if they exist. Most of this will be a no-op.
                 for (int i = 0; i < 15 * 60; i += 1)
                 {
@@ -141,6 +142,12 @@ namespace CertMama // Note: actual namespace depends on the project name.
         }
 
         private Dictionary<string, DateTime> last_url_poll_time = new Dictionary<string, DateTime>();
+
+        public void RunExpiryChecks()
+        {
+            PollServersOnce();
+            DetectUserCertsExpiring();
+        }
 
         public void PollServersOnce()
         {
@@ -270,8 +277,50 @@ namespace CertMama // Note: actual namespace depends on the project name.
             {
                 // Poll a single time every time someone logs in
                 last_url_poll_time.Clear(); // Forget what we polled for previously
-                PollServersOnce();
+                RunExpiryChecks();
             }
         }
+
+        public void DetectUserCertsExpiring()
+        {
+            try
+            {
+                X509Store store = new X509Store(StoreName.My, StoreLocation.CurrentUser);
+
+                store.Open(OpenFlags.ReadOnly);
+
+                var one_month_in_future = DateTime.Today.AddMonths(1);
+
+                foreach (X509Certificate2 certificate in store.Certificates)
+                {
+                    var cert_name = certificate.FriendlyName + ", " + certificate.Subject;
+                    var cert_expire_date = certificate.NotAfter;
+                    if (cert_expire_date < DateTime.Today)
+                    {
+                        new ToastContentBuilder()
+                            .SetToastScenario(ToastScenario.IncomingCall)
+                            .AddText("Certificate Has Expired " + Math.Abs(Math.Round((DateTime.Today - (DateTime)cert_expire_date).TotalDays, 0)) + " Days Ago!")
+                            .AddText("User Certificate: " + cert_name)
+                            .Show();
+                    }
+                    else if (cert_expire_date < one_month_in_future)
+                    {
+                        // Cert will expire within 1 month of DateTime.Today!
+                        new ToastContentBuilder()
+                            .SetToastScenario(ToastScenario.IncomingCall)
+                            .AddText("Certificate Expires in " + Math.Abs(Math.Round((one_month_in_future - (DateTime)cert_expire_date).TotalDays, 0)) + " Days!")
+                            .AddText("User Certificate: " + cert_name)
+                            .Show();
+                    }
+                }
+
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e);
+            }
+        }
+
+
     }
 }
