@@ -422,7 +422,8 @@ namespace CertMama // Note: actual namespace depends on the project name.
                 {
                     if (int.TryParse(max_days_val, out int val_int))
                     {
-                        max_days_allowed_not_logged_in = Math.Max(0, Math.Min(30, val_int));
+                        //max_days_allowed_not_logged_in = Math.Max(0, Math.Min(30, val_int));
+                        max_days_allowed_not_logged_in = Math.Max(0, val_int);
                     }
                 }
 
